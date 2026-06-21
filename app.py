@@ -32,29 +32,82 @@ def load_data():
     try:
         df = pd.read_csv('data/환경변수_통합_분석결과.csv', encoding='utf-8-sig')
     except FileNotFoundError:
-        # 배포 환경: 샘플 데이터 생성
+        # 실제 분석 결과 수치 기반 샘플 데이터
         np.random.seed(42)
-        n = 973
-        df = pd.DataFrame({
-            'N_ID': range(1, n+1),
-            'score_fm': np.random.choice([0,1,2], n, p=[0.05,0.2,0.75]),
-            'score_ps': np.random.choice([0,1,2], n, p=[0.05,0.2,0.75]),
-            'score_cog': np.random.normal(107, 12, n).clip(60,130),
-            'score_lng': np.random.normal(109, 12, n).clip(60,130),
-            'cluster_label': np.random.choice(
-                ['정상_발달군','경계선군','지연_의심군'], n, p=[0.544,0.243,0.213]),
-            'dev_type': np.random.choice(['A형','B형','C형','D형'], n, p=[0.288,0.227,0.227,0.258]),
-            'risk_score': np.random.exponential(15, n).clip(0,100),
-            'risk_grade': np.random.choice(['정상','경계','위험'], n, p=[0.892,0.101,0.007]),
-            'motor_social': np.random.normal(1.86, 0.2, n).clip(0,2),
-            'cog_lang': np.random.normal(107, 12, n).clip(60,130),
-            'target': np.random.choice([0,1,2], n, p=[0.213,0.243,0.544]),
-            '성별': np.random.choice([1,2], n),
-            'income': np.random.randint(1,12,n),
-            'mom_edu': np.random.randint(1,9,n),
-            'care_type': np.random.choice([0,1,2,3,4,5], n),
-            'main_care': np.random.choice([1,2,3], n),
-        })
+        
+        # 군집별 실제 평균/비율 반영
+        cluster_specs = {
+            '정상_발달군': {
+                'n': 529,
+                'score_fm':  (1.931, 0.15),
+                'score_ps':  (1.902, 0.17),
+                'score_cog': (108.19, 6.0),
+                'score_lng': (110.34, 5.5),
+                'risk_mean': 8.0,
+            },
+            '경계선군': {
+                'n': 236,
+                'score_fm':  (1.708, 0.20),
+                'score_ps':  (1.675, 0.22),
+                'score_cog': (105.20, 7.0),
+                'score_lng': (109.65, 6.0),
+                'risk_mean': 18.0,
+            },
+            '지연_의심군': {
+                'n': 208,
+                'score_fm':  (1.841, 0.18),
+                'score_ps':  (1.806, 0.19),
+                'score_cog': (85.49,  9.0),
+                'score_lng': (87.68,  9.5),
+                'risk_mean': 38.0,
+            },
+        }
+        label_map = {'정상_발달군': 2, '경계선군': 1, '지연_의심군': 0}
+
+        chunks = []
+        for cl, spec in cluster_specs.items():
+            n = spec['n']
+            fm  = np.clip(np.random.normal(spec['score_fm'][0],  spec['score_fm'][1],  n), 0, 2)
+            ps  = np.clip(np.random.normal(spec['score_ps'][0],  spec['score_ps'][1],  n), 0, 2)
+            cog = np.clip(np.random.normal(spec['score_cog'][0], spec['score_cog'][1], n), 60, 130)
+            lng = np.clip(np.random.normal(spec['score_lng'][0], spec['score_lng'][1], n), 60, 130)
+            risk = np.clip(np.random.normal(spec['risk_mean'], spec['risk_mean']*0.4, n), 0, 100)
+
+            motor = (fm + ps) / 2
+            cog_l = (cog + lng) / 2
+            med_m, med_c = 1.8636, 107.015
+            dev_type = np.where(
+                (motor >= med_m) & (cog_l >= med_c), 'A형',
+                np.where(
+                    (motor < med_m) & (cog_l >= med_c), 'B형',
+                    np.where((motor >= med_m) & (cog_l < med_c), 'C형', 'D형')
+                )
+            )
+
+            chunks.append(pd.DataFrame({
+                'N_ID':          range(len(pd.concat(chunks)) if chunks else 0,
+                                       len(pd.concat(chunks)) + n if chunks else n),
+                'score_fm':      fm,
+                'score_ps':      ps,
+                'score_cog':     cog,
+                'score_lng':     lng,
+                'cluster':       label_map[cl],
+                'cluster_label': cl,
+                'target':        label_map[cl],
+                'risk_score':    risk,
+                'risk_grade':    np.where(risk < 20, '정상', np.where(risk < 40, '경계', '위험')),
+                'motor_social':  motor,
+                'cog_lang':      cog_l,
+                'dev_type':      dev_type,
+                '성별':          np.random.choice([1, 2], n, p=[0.519, 0.481]),
+                'income':        np.random.randint(1, 12, n),
+                'mom_edu':       np.random.randint(3, 9, n),
+                'care_type':     np.random.choice([0,1,2,3], n, p=[0.462,0.086,0.442,0.010]),
+                'main_care':     np.random.choice([1,2,3], n, p=[0.460,0.002,0.538]),
+            }))
+
+        df = pd.concat(chunks, ignore_index=True)
+
     df['성별'] = pd.to_numeric(df['성별'], errors='coerce')
     df['성별_라벨'] = df['성별'].map({1: '남', 2: '여'}).fillna('미상')
     return df
