@@ -66,7 +66,12 @@ df = load_data()
 def train_model():
     FEATURES = ['score_fm', 'score_ps', 'score_cog', 'score_lng']
     X = df[FEATURES].values
-    y = df['cluster'].values
+    # cluster 컬럼 없으면 cluster_label로 대체 생성
+    if 'cluster' not in df.columns:
+        label_map = {'지연_의심군': 0, '경계선군': 1, '정상_발달군': 2}
+        y = df['cluster_label'].map(label_map).values
+    else:
+        y = df['cluster'].values
     scaler = StandardScaler()
     X_sc = scaler.fit_transform(X)
     rf = RandomForestClassifier(n_estimators=300, random_state=42,
